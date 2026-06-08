@@ -1,0 +1,109 @@
+{
+  "batch_id": "batch_20260608_223307_22f1175f",
+  "created_at": "2026-06-08T22:33:07.095387",
+  "source_file": "D:\\workSpace\\AI__SPACE\\zyx-00084\\_review_tmp_manual\\custom_supplier_invoices.json",
+  "file_type": "json",
+  "invoices": [
+    {
+      "invoice_no": "A-002",
+      "amount": 100.0,
+      "tax_rate": 0.06,
+      "tax_amount": 6.0,
+      "total_amount": 106.0,
+      "date": "2026-06-08",
+      "supplier": "SupplierA",
+      "buyer": "Buyer1",
+      "row_index": 1,
+      "rule_source": {
+        "rule_source": "supplier",
+        "supplier": "SupplierA",
+        "conflicts": {
+          "valid_tax_rates": {
+            "global_value": [
+              0.0,
+              0.06,
+              0.09,
+              0.13
+            ],
+            "supplier_value": [
+              0.25
+            ],
+            "status": "overridden",
+            "message": "税率白名单不同，全局 [0.0, 0.06, 0.09, 0.13]，供应商 [0.25]"
+          },
+          "amount_tolerance": {
+            "global_value": 0.01,
+            "supplier_value": 0.5,
+            "status": "overridden",
+            "message": "金额容差不同，全局 0.01，供应商 0.5"
+          }
+        }
+      }
+    },
+    {
+      "invoice_no": "N-001",
+      "amount": 100.0,
+      "tax_rate": 0.25,
+      "tax_amount": 25.0,
+      "total_amount": 125.0,
+      "date": "2026-06-08",
+      "supplier": "NoRuleVendor",
+      "buyer": "Buyer1",
+      "row_index": 2,
+      "rule_source": {
+        "rule_source": "global",
+        "supplier": "NoRuleVendor",
+        "conflicts": {}
+      }
+    }
+  ],
+  "issues": [
+    {
+      "type": "invalid_tax_rate",
+      "severity": "error",
+      "message": "Invalid tax rate 0.06 for invoice 'A-002' (supplier: SupplierA, rule_source: supplier). Valid rates: [0.25]",
+      "invoice_no": "A-002",
+      "row_index": 1,
+      "details": {
+        "invalid_rate": 0.06,
+        "valid_rates": [
+          0.25
+        ],
+        "supplier": "SupplierA",
+        "rule_source": "supplier",
+        "global_valid_rates": [
+          0.0,
+          0.06,
+          0.09,
+          0.13
+        ],
+        "supplier_rule_tax_rates": [
+          0.25
+        ],
+        "overridden": true
+      }
+    },
+    {
+      "type": "invalid_tax_rate",
+      "severity": "error",
+      "message": "Invalid tax rate 0.25 for invoice 'N-001' (supplier: NoRuleVendor, rule_source: global). Valid rates: [0.0, 0.06, 0.09, 0.13]",
+      "invoice_no": "N-001",
+      "row_index": 2,
+      "details": {
+        "invalid_rate": 0.25,
+        "valid_rates": [
+          0.0,
+          0.06,
+          0.09,
+          0.13
+        ],
+        "supplier": "NoRuleVendor",
+        "rule_source": "global"
+      }
+    }
+  ],
+  "fixes": [],
+  "last_undo": null,
+  "validated": true,
+  "validated_at": "2026-06-08T22:35:45.893562"
+}

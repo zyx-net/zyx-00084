@@ -1,0 +1,126 @@
+{
+  "batch_id": "batch_20260608_223209_231be541",
+  "created_at": "2026-06-08T22:32:09.252990",
+  "source_file": "D:\\workSpace\\AI__SPACE\\zyx-00084\\_review_tmp_manual\\custom_supplier_invoices.csv",
+  "file_type": "csv",
+  "validated": true,
+  "validated_at": "2026-06-08T22:32:40.247634",
+  "summary": {
+    "invoice_count": 2,
+    "issue_count": 1,
+    "error_count": 0,
+    "warning_count": 1,
+    "info_count": 0,
+    "issue_by_type": {
+      "amount_mismatch": 1
+    },
+    "fix_count": 1,
+    "applied_fix_count": 0,
+    "unapplied_fix_count": 1,
+    "total_amount": 200.0,
+    "total_tax": 38.0,
+    "grand_total": 245.0,
+    "has_undo": false,
+    "rule_source_breakdown": {
+      "supplier": 1,
+      "global": 1
+    },
+    "supplier_rule_count": 1,
+    "suppliers_with_rules": [
+      "SupplierA"
+    ],
+    "invoices_with_rule_conflicts": 1
+  },
+  "invoices": [
+    {
+      "invoice_no": "A-001",
+      "amount": 100.0,
+      "tax_rate": 0.25,
+      "tax_amount": 25.0,
+      "total_amount": 125.0,
+      "date": "2026-06-08",
+      "supplier": "SupplierA",
+      "buyer": "Buyer1",
+      "row_index": 2,
+      "rule_source": {
+        "rule_source": "supplier",
+        "supplier": "SupplierA",
+        "conflicts": {
+          "valid_tax_rates": {
+            "global_value": [
+              0.0,
+              0.06,
+              0.09,
+              0.13
+            ],
+            "supplier_value": [
+              0.25
+            ],
+            "status": "overridden",
+            "message": "税率白名单不同，全局 [0.0, 0.06, 0.09, 0.13]，供应商 [0.25]"
+          },
+          "amount_tolerance": {
+            "global_value": 0.01,
+            "supplier_value": 0.5,
+            "status": "overridden",
+            "message": "金额容差不同，全局 0.01，供应商 0.5"
+          }
+        },
+        "conflict_status": "conflicts_detected"
+      }
+    },
+    {
+      "invoice_no": "G-001",
+      "amount": 100.0,
+      "tax_rate": 0.13,
+      "tax_amount": 13.0,
+      "total_amount": 120.0,
+      "date": "2026-06-08",
+      "supplier": "GeneralVendor",
+      "buyer": "Buyer1",
+      "row_index": 3,
+      "rule_source": {
+        "rule_source": "global",
+        "supplier": "GeneralVendor",
+        "conflicts": {},
+        "conflict_status": "no_conflicts"
+      }
+    }
+  ],
+  "issues": [
+    {
+      "type": "amount_mismatch",
+      "severity": "warning",
+      "message": "Amount mismatch for invoice 'G-001' (supplier: GeneralVendor, rule_source: global): amount + tax_amount = 100.0 + 13.0 = 113.0, but total_amount = 120.0 (diff: 7.0000, tolerance: 0.01)",
+      "invoice_no": "G-001",
+      "row_index": 3,
+      "details": {
+        "amount": 100.0,
+        "tax_amount": 13.0,
+        "computed_total": 113.0,
+        "stated_total": 120.0,
+        "difference": 7.0,
+        "tolerance": 0.01,
+        "supplier": "GeneralVendor",
+        "rule_source": "global"
+      },
+      "rule_source": "global",
+      "supplier": "GeneralVendor"
+    }
+  ],
+  "fixes": [
+    {
+      "id": "fix_ccdc3912",
+      "description": "修正发票 G-001 的合计金额",
+      "invoice_no": "G-001",
+      "field": "total_amount",
+      "old_value": 120.0,
+      "new_value": 113.0,
+      "reason": "金额 + 税额 = 100.0 + 13.0 = 113.0，与票面合计 120.0 不符",
+      "row_index": 3,
+      "applied": false,
+      "applied_at": null
+    }
+  ],
+  "last_undo": null
+}

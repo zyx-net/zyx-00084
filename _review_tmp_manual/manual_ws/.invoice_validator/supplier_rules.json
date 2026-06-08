@@ -1,0 +1,12 @@
+{
+  "SupplierA": {
+    "supplier": "SupplierA",
+    "valid_tax_rates": [
+      0.25
+    ],
+    "amount_tolerance": 0.5,
+    "required_fields": [],
+    "created_at": "2026-06-08T22:31:33.781603",
+    "updated_at": "2026-06-08T22:31:33.781603"
+  }
+}

@@ -1,0 +1,3 @@
+﻿invoice_no,amount,tax_rate,tax_amount,total_amount,date,supplier,buyer
+A-001,100,0.25,25,125,2026-06-08,SupplierA,Buyer1
+G-001,100,0.13,13,120,2026-06-08,GeneralVendor,Buyer1

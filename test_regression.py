@@ -244,13 +244,13 @@ def test_3_markdown_chinese_readability() -> None:
         "问题总数量",
         "不含税金额合计",
         "价税合计",
-        "## 二、校验问题详情",
+        "## 三、校验问题详情",
         "重复发票号",
         "非法税率",
         "金额不一致",
         "问题级别",
         "问题描述",
-        "## 三、修正记录",
+        "## 四、修正记录",
     ]
 
     for kw in expected_keywords:
@@ -375,6 +375,267 @@ def test_6_error_scenarios() -> None:
     safe_print(f"   [NOTE] 损坏JSON错误: {_replace_emoji((out + err).strip()[:100])}...")
 
 
+def test_7_supplier_rule_persistence() -> None:
+    """测试7: 供应商规则持久化（保存后重启可读取）"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试7: 供应商规则持久化")
+    safe_print("=" * 60)
+
+    code, out, err = run([*CLI, "init", "--force"])
+    assert_exit(code, 0, "初始化成功")
+
+    supplier = "华为技术有限公司"
+    code, out, err = run([
+        *CLI, "rule", "add", supplier,
+        "-t", "0.13", "-t", "0.06",
+        "-T", "0.05",
+        "-r", "invoice_no", "-r", "amount", "-r", "tax_rate", "-r", "tax_amount",
+        "-r", "total_amount", "-r", "date", "-r", "supplier", "-r", "buyer"
+    ])
+    assert_exit(code, 0, "添加供应商规则成功")
+    assert_contains(out, supplier, "输出包含供应商名称")
+    assert_contains(out, "已创建供应商规则", "规则创建成功消息")
+
+    rule_file = TEST_DIR / ".invoice_validator" / "supplier_rules.json"
+    assert rule_file.exists(), f"供应商规则文件不存在: {rule_file}"
+
+    with open(rule_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    assert supplier in data, f"规则文件中不存在供应商: {supplier}"
+    assert data[supplier]["valid_tax_rates"] == [0.13, 0.06], "税率白名单正确"
+    assert data[supplier]["amount_tolerance"] == 0.05, "金额容差正确"
+    assert len(data[supplier]["required_fields"]) == 8, "必填字段正确"
+    assert "created_at" in data[supplier], "包含创建时间"
+    assert "updated_at" in data[supplier], "包含更新时间"
+    safe_print(f"   [OK] 规则文件内容正确: {supplier}")
+
+    code, out, err = run([*CLI, "rule", "reload"])
+    assert_exit(code, 0, "重新加载规则成功")
+    assert_contains(out, "已重新加载规则配置", "重新加载成功消息")
+    assert_contains(out, "已加载规则数: 1", "规则数量正确")
+
+    code, out, err = run([*CLI, "rule", "list"])
+    assert_exit(code, 0, "列出规则成功")
+    assert_contains(out, supplier, "列表包含供应商")
+    safe_print("   [OK] 持久化验证通过：规则保存→重启→读取完整链路正常")
+
+
+def test_8_import_format_differences() -> None:
+    """测试8: 导入格式差异（CSV/JSON 均支持供应商规则匹配）"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试8: 导入格式差异（CSV/JSON 供应商规则匹配）")
+    safe_print("=" * 60)
+
+    code, out, err = run([*CLI, "init", "--force"])
+    assert_exit(code, 0, "初始化成功")
+
+    supplier_a = "华为技术有限公司"
+    supplier_b = "阿里巴巴集团"
+
+    code, out, err = run([*CLI, "rule", "add", supplier_a, "-t", "0.13", "-t", "0.06"])
+    assert_exit(code, 0, f"添加 {supplier_a} 规则成功")
+
+    code, out, err = run([*CLI, "rule", "add", supplier_b, "-t", "0.09", "-t", "0.06"])
+    assert_exit(code, 0, f"添加 {supplier_b} 规则成功")
+
+    code, out, err = run([*CLI, "import", "invoices_sample.csv"])
+    assert_exit(code, 0, "CSV 导入成功")
+    assert_contains(out, "规则来源", "CSV 导入显示规则来源统计")
+    assert_contains(out, "供应商专属", "CSV 导入显示使用供应商规则的发票数")
+    assert_contains(out, "全局默认", "CSV 导入显示使用全局规则的发票数")
+
+    code, out, err = run([*CLI, "import", "invoices_sample.json"])
+    assert_exit(code, 0, "JSON 导入成功")
+    assert_contains(out, "规则来源", "JSON 导入显示规则来源统计")
+    assert_contains(out, "供应商专属", "JSON 导入显示使用供应商规则的发票数")
+
+    code, out, err = run([*CLI, "validate"])
+    assert_exit(code, 3, "校验完成（含非法税率）")
+    assert_contains(out, "[supplier]", "校验输出标注供应商规则来源")
+    assert_contains(out, "[global]", "校验输出标注全局规则来源")
+
+    safe_print("   [OK] CSV 和 JSON 导入均正确匹配供应商规则")
+
+
+def test_9_conflict_detection() -> None:
+    """测试9: 冲突提示（添加/更新规则时检测与全局的冲突）"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试9: 规则冲突检测与提示")
+    safe_print("=" * 60)
+
+    code, out, err = run([*CLI, "init", "--force"])
+    assert_exit(code, 0, "初始化成功")
+
+    supplier = "字节跳动"
+
+    code, out, err = run([
+        *CLI, "rule", "add", supplier,
+        "-t", "0.13",
+        "-T", "0.02",
+        "-r", "invoice_no", "-r", "amount", "-r", "tax_rate", "-r", "total_amount",
+        "-r", "date", "-r", "supplier", "-r", "buyer"
+    ])
+    assert_exit(code, 0, "添加规则成功")
+    assert_contains(out, "规则覆盖提示", "输出包含覆盖提示")
+    assert_contains(out, "税率白名单不同", "覆盖提示包含税率")
+    assert_contains(out, "金额容差不同", "覆盖提示包含容差")
+
+    code, out, err = run([*CLI, "rule", "show", supplier])
+    assert_exit(code, 0, "查看规则详情成功")
+    assert_contains(out, "| 配置项 | 供应商规则 | 全局配置 | 状态 |", "显示对比表格")
+    assert_contains(out, "⚠️  冲突", "冲突状态显示正确")
+
+    code, out, err = run([*CLI, "rule", "add", supplier, "-t", "0.13"])
+    assert_exit(code, 12, "重复添加规则退出码=12")
+    combined = out + err
+    assert_contains(combined, "已存在规则", "提示规则已存在")
+    assert_contains(combined, "--overwrite", "提示使用 --overwrite")
+
+    code, out, err = run([*CLI, "rule", "add", supplier, "-t", "0.09", "--overwrite"])
+    assert_exit(code, 0, "使用 --overwrite 覆盖成功")
+    assert_contains(out, "已覆盖供应商规则", "覆盖成功消息")
+
+    code, out, err = run([*CLI, "rule", "add", "测试供应商", "-r", ""])
+    assert_exit(code, 13, "空字段名退出码=13")
+    combined = out + err
+    assert_contains(combined, "必填字段名不能为空", "空字段名错误提示")
+
+    code, out, err = run([*CLI, "rule", "show", "不存在的供应商"])
+    assert_exit(code, 15, "不存在的规则退出码=15")
+    combined = out + err
+    assert_contains(combined, "未找到供应商", "规则不存在错误提示")
+
+    safe_print("   [OK] 冲突检测、重复添加、空字段、不存在规则均正确处理")
+
+
+def test_10_export_rule_source_fields() -> None:
+    """测试10: 导出字段（Markdown/JSON 都包含规则来源信息）"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试10: 导出字段包含规则来源信息")
+    safe_print("=" * 60)
+
+    code, out, err = run([*CLI, "init", "--force"])
+    assert_exit(code, 0, "初始化成功")
+
+    supplier = "华为技术有限公司"
+    code, out, err = run([*CLI, "rule", "add", supplier, "-t", "0.13", "-t", "0.06"])
+    assert_exit(code, 0, "添加供应商规则成功")
+
+    code, out, err = run([*CLI, "import", "invoices_sample.csv"])
+    assert_exit(code, 0, "导入成功")
+
+    code, out, err = run([*CLI, "validate"])
+    assert_exit(code, 3, "校验完成")
+
+    report_md = TEST_DIR / "test_report.md"
+    code, out, err = run([*CLI, "export", "-o", str(report_md.with_suffix("")), "-f", "markdown"])
+    assert_exit(code, 0, "导出 Markdown 成功")
+
+    content = report_md.read_text(encoding="utf-8")
+    expected_md = [
+        "🌟 使用专属规则的供应商数",
+        "规则来源分布",
+        "## 二、发票明细（逐张可追溯）",
+        "| 发票号 | 销售方 | 金额 | 税率 | 价税合计 | 规则来源 | 规则状态 | 冲突信息 |",
+        "🌟 供应商专属规则",
+        "🔹 全局默认规则",
+        "### 规则来源说明",
+    ]
+    for kw in expected_md:
+        assert_contains(content, kw, f"Markdown 报告包含 '{kw}'")
+    safe_print("   [OK] Markdown 报告包含规则来源表格和说明")
+
+    report_json = TEST_DIR / "test_report.json"
+    code, out, err = run([*CLI, "export", "-o", str(report_json.with_suffix("")), "-f", "json"])
+    assert_exit(code, 0, "导出 JSON 成功")
+
+    with open(report_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert "rule_source_breakdown" in data["summary"], "JSON 摘要包含规则来源统计"
+    assert "supplier_rule_count" in data["summary"], "JSON 摘要包含供应商规则数"
+    assert "suppliers_with_rules" in data["summary"], "JSON 摘要包含使用规则的供应商列表"
+    assert "invoices_with_rule_conflicts" in data["summary"], "JSON 摘要包含冲突发票数"
+
+    for inv in data["invoices"]:
+        assert "rule_source" in inv, f"发票 {inv.get('invoice_no')} 包含 rule_source 字段"
+        rs = inv["rule_source"]
+        assert "rule_source" in rs, "rule_source 包含 rule_source 字段"
+        assert "supplier" in rs, "rule_source 包含 supplier 字段"
+        assert "conflicts" in rs, "rule_source 包含 conflicts 字段"
+        assert "conflict_status" in rs, "rule_source 包含 conflict_status 字段"
+        assert rs["rule_source"] in ["supplier", "global"], f"rule_source 值合法: {rs['rule_source']}"
+
+    for issue in data["issues"]:
+        if issue.get("invoice_no"):
+            assert "rule_source" in issue, f"问题 {issue.get('invoice_no')} 包含 rule_source 字段"
+            assert "supplier" in issue, f"问题 {issue.get('invoice_no')} 包含 supplier 字段"
+
+    safe_print("   [OK] JSON 报告每张发票、每个问题都包含规则来源字段")
+
+    hw_inv = None
+    for inv in data["invoices"]:
+        if inv.get("supplier") == supplier:
+            hw_inv = inv
+            break
+    assert hw_inv is not None, f"未找到 {supplier} 的发票"
+    assert hw_inv["rule_source"]["rule_source"] == "supplier", f"{supplier} 发票使用供应商规则"
+    assert hw_inv["rule_source"]["conflict_status"] in ["conflicts_detected", "no_conflicts"], "冲突状态正确"
+    safe_print(f"   [OK] {supplier} 发票规则来源追踪正确")
+
+
+def test_11_config_dir_not_writable() -> None:
+    """测试11: 配置目录不可写（权限不足错误处理，退出码=14）"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试11: 配置目录不可写（权限不足）")
+    safe_print("=" * 60)
+
+    code, out, err = run([*CLI, "init", "--force"])
+    assert_exit(code, 0, "初始化成功")
+
+    config_dir = TEST_DIR / ".invoice_validator"
+
+    if sys.platform != "win32":
+        old_mode = config_dir.stat().st_mode
+        try:
+            config_dir.chmod(0o400)
+            safe_print("   [NOTE] 已将配置目录设为只读")
+
+            code, out, err = run([*CLI, "rule", "add", "测试供应商", "-t", "0.13"])
+            assert_exit(code, 14, "权限不足退出码=14")
+            combined = out + err
+            assert_contains(combined, "权限不足", "错误消息包含权限不足")
+            assert_contains(combined, "只读或权限不足", "错误消息说明原因")
+            safe_print("   [OK] 只读目录下权限错误处理正确")
+        finally:
+            config_dir.chmod(old_mode)
+    else:
+        import stat
+        try:
+            code, out, err = run([*CLI, "rule", "add", "临时供应商", "-t", "0.13"])
+            assert_exit(code, 0, "创建初始规则成功")
+
+            rules_file = config_dir / "supplier_rules.json"
+            import ctypes
+            FILE_ATTRIBUTE_READONLY = 0x01
+            ctypes.windll.kernel32.SetFileAttributesW(str(rules_file), FILE_ATTRIBUTE_READONLY)
+            safe_print("   [NOTE] 已将规则文件设为只读（Windows）")
+
+            code, out, err = run([*CLI, "rule", "add", "测试供应商", "-t", "0.13"])
+            assert_exit(code, 14, "权限不足退出码=14")
+            combined = out + err
+            assert_contains(combined, "权限不足", "错误消息包含权限不足")
+            safe_print("   [OK] 只读文件下权限错误处理正确")
+        finally:
+            rules_file = config_dir / "supplier_rules.json"
+            ctypes.windll.kernel32.SetFileAttributesW(str(rules_file), 0)
+
+    rule_file = config_dir / "supplier_rules.json"
+    code, out, err = run([*CLI, "rule", "add", "测试供应商", "-t", "0.13"])
+    assert_exit(code, 0, "恢复权限后添加规则成功")
+    safe_print("   [OK] 恢复权限后操作正常")
+
+
 def main() -> None:
     safe_print("[START] 发票校验 CLI 回归测试开始")
     safe_print(f"   Python 版本: {sys.version}")
@@ -390,6 +651,11 @@ def main() -> None:
         test_4_invalid_tax_rates_config()
         test_5_json_export_and_history()
         test_6_error_scenarios()
+        test_7_supplier_rule_persistence()
+        test_8_import_format_differences()
+        test_9_conflict_detection()
+        test_10_export_rule_source_fields()
+        test_11_config_dir_not_writable()
     finally:
         if TEST_DIR.exists():
             shutil.rmtree(TEST_DIR)

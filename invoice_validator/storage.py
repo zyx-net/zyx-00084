@@ -55,18 +55,7 @@ class StorageManager:
             raise RuntimeError(f"Failed to load batch: {e}") from e
 
         invoices = [
-            Invoice(
-                invoice_no=inv["invoice_no"],
-                amount=inv["amount"],
-                tax_rate=inv["tax_rate"],
-                tax_amount=inv.get("tax_amount", 0.0),
-                total_amount=inv["total_amount"],
-                date=inv["date"],
-                supplier=inv["supplier"],
-                buyer=inv["buyer"],
-                row_index=inv.get("row_index"),
-                raw_data=inv.get("raw_data", {}),
-            )
+            Invoice.from_dict(inv)
             for inv in data.get("invoices", [])
         ]
 

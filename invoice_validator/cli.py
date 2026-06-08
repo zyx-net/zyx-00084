@@ -9,7 +9,7 @@ from typing import Optional, List
 
 import click
 
-from .config import ConfigManager, ConfigError
+from .config import ConfigManager, ConfigError, SupplierRuleError
 from .storage import StorageManager
 from .importer import InvoiceImporter
 from .validator import InvoiceValidator
@@ -141,21 +141,21 @@ def init_cmd(ctx: CLIContext, force: bool) -> None:
             "invoice_no", "amount", "tax_rate", "tax_amount",
             "total_amount", "date", "supplier", "buyer"
         ])
-        writer.writerow(["INV001", 1000.00, 0.13, 130.00, 1130.00, "2024-01-15", "供应商A有限公司", "采购方公司"])
-        writer.writerow(["INV002", 2000.00, 0.09, 180.00, 2180.00, "2024-01-16", "供应商B有限公司", "采购方公司"])
-        writer.writerow(["INV002", 500.00, 0.06, 30.00, 530.00, "2024-01-17", "供应商C有限公司", "采购方公司"])
-        writer.writerow(["INV003", 3000.00, 0.13, 390.00, 3400.00, "2024-01-18", "供应商A有限公司", "采购方公司"])
-        writer.writerow(["INV004", 1500.00, 0.25, 375.00, 1875.00, "2024-01-19", "供应商D有限公司", "采购方公司"])
-        writer.writerow(["INV005", 800.00, 0.06, 48.00, 850.00, "2024-01-20", "供应商E有限公司", "采购方公司"])
+        writer.writerow(["INV001", 1000.00, 0.13, 130.00, 1130.00, "2024-01-15", "华为技术有限公司", "采购方公司"])
+        writer.writerow(["INV002", 2000.00, 0.09, 180.00, 2180.00, "2024-01-16", "阿里巴巴集团", "采购方公司"])
+        writer.writerow(["INV002", 500.00, 0.06, 30.00, 530.00, "2024-01-17", "腾讯科技", "采购方公司"])
+        writer.writerow(["INV003", 3000.00, 0.13, 390.00, 3400.00, "2024-01-18", "华为技术有限公司", "采购方公司"])
+        writer.writerow(["INV004", 1500.00, 0.25, 375.00, 1875.00, "2024-01-19", "字节跳动", "采购方公司"])
+        writer.writerow(["INV005", 800.00, 0.06, 48.00, 850.00, "2024-01-20", "小米科技", "采购方公司"])
 
     json_sample = samples_dir / "invoices_sample.json"
     json_data = [
-        {"invoice_no": "INV001", "amount": 1000.00, "tax_rate": 0.13, "tax_amount": 130.00, "total_amount": 1130.00, "date": "2024-01-15", "supplier": "供应商A有限公司", "buyer": "采购方公司"},
-        {"invoice_no": "INV002", "amount": 2000.00, "tax_rate": 0.09, "tax_amount": 180.00, "total_amount": 2180.00, "date": "2024-01-16", "supplier": "供应商B有限公司", "buyer": "采购方公司"},
-        {"invoice_no": "INV002", "amount": 500.00, "tax_rate": 0.06, "tax_amount": 30.00, "total_amount": 530.00, "date": "2024-01-17", "supplier": "供应商C有限公司", "buyer": "采购方公司"},
-        {"invoice_no": "INV003", "amount": 3000.00, "tax_rate": 0.13, "tax_amount": 390.00, "total_amount": 3400.00, "date": "2024-01-18", "supplier": "供应商A有限公司", "buyer": "采购方公司"},
-        {"invoice_no": "INV004", "amount": 1500.00, "tax_rate": 0.25, "tax_amount": 375.00, "total_amount": 1875.00, "date": "2024-01-19", "supplier": "供应商D有限公司", "buyer": "采购方公司"},
-        {"invoice_no": "INV005", "amount": 800.00, "tax_rate": 0.06, "tax_amount": 48.00, "total_amount": 850.00, "date": "2024-01-20", "supplier": "供应商E有限公司", "buyer": "采购方公司"},
+        {"invoice_no": "INV001", "amount": 1000.00, "tax_rate": 0.13, "tax_amount": 130.00, "total_amount": 1130.00, "date": "2024-01-15", "supplier": "华为技术有限公司", "buyer": "采购方公司"},
+        {"invoice_no": "INV002", "amount": 2000.00, "tax_rate": 0.09, "tax_amount": 180.00, "total_amount": 2180.00, "date": "2024-01-16", "supplier": "阿里巴巴集团", "buyer": "采购方公司"},
+        {"invoice_no": "INV002", "amount": 500.00, "tax_rate": 0.06, "tax_amount": 30.00, "total_amount": 530.00, "date": "2024-01-17", "supplier": "腾讯科技", "buyer": "采购方公司"},
+        {"invoice_no": "INV003", "amount": 3000.00, "tax_rate": 0.13, "tax_amount": 390.00, "total_amount": 3400.00, "date": "2024-01-18", "supplier": "华为技术有限公司", "buyer": "采购方公司"},
+        {"invoice_no": "INV004", "amount": 1500.00, "tax_rate": 0.25, "tax_amount": 375.00, "total_amount": 1875.00, "date": "2024-01-19", "supplier": "字节跳动", "buyer": "采购方公司"},
+        {"invoice_no": "INV005", "amount": 800.00, "tax_rate": 0.06, "tax_amount": 48.00, "total_amount": 850.00, "date": "2024-01-20", "supplier": "小米科技", "buyer": "采购方公司"},
     ]
     with open(json_sample, "w", encoding="utf-8") as f:
         json.dump(json_data, f, indent=2, ensure_ascii=False)
@@ -214,6 +214,19 @@ def import_cmd(ctx: CLIContext, file_path: str) -> None:
     safe_echo(f"📄 源文件: {file_path}")
     safe_echo(f"✅ 成功导入: {len(result.invoices)} 张发票")
 
+    if result.rule_sources:
+        from collections import Counter
+        src_counts = Counter(v.rule_source for v in result.rule_sources.values())
+        supplier_count = sum(1 for v in result.rule_sources.values() if v.rule_source == "supplier")
+        safe_echo(f"   规则来源: 🌟 供应商专属={supplier_count}张, 🔹 全局默认={len(result.invoices) - supplier_count}张")
+
+        if result.conflicts:
+            safe_echo(f"⚠️  规则冲突: {len(result.conflicts)} 张发票涉及供应商规则与全局配置冲突")
+            for c in result.conflicts[:3]:
+                safe_echo(f"   - 发票 {c['invoice_no']} ({c['supplier']}): {', '.join(c['conflicts'].keys())}")
+            if len(result.conflicts) > 3:
+                safe_echo(f"   ... 还有 {len(result.conflicts) - 3} 条冲突")
+
     if result.issues:
         errors = [i for i in result.issues if i.severity == Severity.ERROR]
         warnings = [i for i in result.issues if i.severity == Severity.WARNING]
@@ -263,6 +276,17 @@ def validate_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
     safe_echo(f"📦 批次: {batch.batch_id}")
     safe_echo(f"✅ 校验完成: {len(batch.invoices)} 张发票")
 
+    if result.rule_sources:
+        from collections import Counter
+        src_counts = Counter(v.rule_source for v in result.rule_sources.values())
+        supplier_count = sum(1 for v in result.rule_sources.values() if v.rule_source == "supplier")
+        safe_echo(f"   规则来源: 🌟 供应商专属={supplier_count}张, 🔹 全局默认={len(batch.invoices) - supplier_count}张")
+
+        if result.conflicts:
+            safe_echo(f"⚠️  规则冲突: {len(result.conflicts)} 张发票涉及冲突，请关注校验结果")
+            suppliers_with_conflicts = sorted(set(c['supplier'] for c in result.conflicts))
+            safe_echo(f"   涉及供应商: {', '.join(suppliers_with_conflicts)}")
+
     if result.issues:
         errors = [i for i in result.issues if i.severity == Severity.ERROR]
         warnings = [i for i in result.issues if i.severity == Severity.WARNING]
@@ -272,7 +296,9 @@ def validate_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
         for i, issue in enumerate(result.issues, 1):
             icon = "🔴" if issue.severity == Severity.ERROR else "🟡"
             loc = f"[发票:{issue.invoice_no}]" if issue.invoice_no else (f"[行:{issue.row_index}]" if issue.row_index else "")
-            safe_echo(f"{i:2d}. {icon} {issue.type.value:25s} {loc} {issue.message}")
+            rule_src = issue.details.get("rule_source", "") if issue.details else ""
+            src_tag = f"[{rule_src}]" if rule_src else ""
+            safe_echo(f"{i:2d}. {icon} {issue.type.value:25s} {loc} {src_tag} {issue.message}")
     else:
         safe_echo("✅ 全部校验通过！")
 
@@ -540,6 +566,276 @@ def show_cmd(ctx: CLIContext, batch_id: Optional[str], issues: bool, fixes: bool
             safe_echo(f"↩️  可撤销: 修正 {undo.get('fix_id')} (发票: {undo.get('invoice_no')})")
 
     sys.exit(ExitCode.SUCCESS.value)
+
+
+@cli.group("rule")
+def rule_cmd() -> None:
+    """供应商专属校验规则管理（增删改查）"""
+    pass
+
+
+@rule_cmd.command("add")
+@click.argument("supplier")
+@click.option("--tax-rate", "-t", "tax_rates", multiple=True, type=float, help="税率白名单，可重复指定，例如 -t 0.13 -t 0.09")
+@click.option("--tolerance", "-T", type=float, help="金额容差，覆盖全局 amount_tolerance")
+@click.option("--required-field", "-r", "required_fields", multiple=True, help="必填字段，可重复指定，例如 -r invoice_no -r tax_amount")
+@click.option("--overwrite", "-f", is_flag=True, help="覆盖已存在的供应商规则")
+@pass_ctx
+def rule_add_cmd(ctx: CLIContext, supplier: str, tax_rates: List[float], tolerance: Optional[float], required_fields: List[str], overwrite: bool) -> None:
+    """添加供应商专属校验规则"""
+    try:
+        ctx.config_mgr.load()
+        rule, conflicts = ctx.config_mgr.add_supplier_rule(
+            supplier=supplier,
+            valid_tax_rates=list(tax_rates) if tax_rates else None,
+            amount_tolerance=tolerance,
+            required_fields=list(required_fields) if required_fields else None,
+            overwrite=overwrite,
+        )
+
+        save_msg = "已覆盖" if overwrite else "已创建"
+        safe_echo(f"✅ {save_msg}供应商规则: {supplier}")
+        safe_echo(f"   配置文件: {ctx.config_mgr.supplier_rules_file}")
+        safe_echo(f"   创建时间: {rule.created_at}")
+        safe_echo(f"   更新时间: {rule.updated_at}")
+
+        if rule.valid_tax_rates:
+            safe_echo(f"   税率白名单: {sorted(rule.valid_tax_rates)}")
+        else:
+            safe_echo(f"   税率白名单: 使用全局配置")
+
+        if rule.amount_tolerance is not None:
+            safe_echo(f"   金额容差: {rule.amount_tolerance}")
+        else:
+            safe_echo(f"   金额容差: 使用全局配置")
+
+        if rule.required_fields:
+            safe_echo(f"   必填字段: {rule.required_fields}")
+        else:
+            safe_echo(f"   必填字段: 使用全局配置")
+
+        if conflicts:
+            safe_echo("")
+            safe_echo("⚠️  规则覆盖提示（与全局配置的差异）:")
+            for field, info in conflicts.items():
+                safe_echo(f"   - {field}: {info.get('message', '值不同')}")
+            safe_echo("")
+            safe_echo("💡 查看覆盖详情: invoice-validator rule show " + supplier)
+
+        sys.exit(ExitCode.SUCCESS.value)
+
+    except SupplierRuleError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+
+
+@rule_cmd.command("update")
+@click.argument("supplier")
+@click.option("--tax-rate", "-t", "tax_rates", multiple=True, type=float, help="税率白名单，可重复指定")
+@click.option("--tolerance", "-T", type=float, help="金额容差")
+@click.option("--required-field", "-r", "required_fields", multiple=True, help="必填字段，可重复指定")
+@click.option("--clear-tax-rates", is_flag=True, help="清除税率配置，恢复使用全局")
+@click.option("--clear-tolerance", is_flag=True, help="清除容差配置，恢复使用全局")
+@click.option("--clear-required-fields", is_flag=True, help="清除必填字段配置，恢复使用全局")
+@pass_ctx
+def rule_update_cmd(ctx: CLIContext, supplier: str, tax_rates: List[float], tolerance: Optional[float], required_fields: List[str], clear_tax_rates: bool, clear_tolerance: bool, clear_required_fields: bool) -> None:
+    """更新供应商专属校验规则"""
+    try:
+        ctx.config_mgr.load()
+        rule, conflicts = ctx.config_mgr.update_supplier_rule(
+            supplier=supplier,
+            valid_tax_rates=list(tax_rates) if tax_rates else (None if not clear_tax_rates else []),
+            amount_tolerance=tolerance if tolerance is not None else (None if not clear_tolerance else 0.0),
+            required_fields=list(required_fields) if required_fields else (None if not clear_required_fields else []),
+        )
+
+        safe_echo(f"✅ 已更新供应商规则: {supplier}")
+        safe_echo(f"   更新时间: {rule.updated_at}")
+
+        if rule.valid_tax_rates:
+            safe_echo(f"   税率白名单: {sorted(rule.valid_tax_rates)}")
+        else:
+            safe_echo(f"   税率白名单: 使用全局配置")
+
+        if rule.amount_tolerance is not None:
+            safe_echo(f"   金额容差: {rule.amount_tolerance}")
+        else:
+            safe_echo(f"   金额容差: 使用全局配置")
+
+        if rule.required_fields:
+            safe_echo(f"   必填字段: {rule.required_fields}")
+        else:
+            safe_echo(f"   必填字段: 使用全局配置")
+
+        if conflicts:
+            safe_echo("")
+            safe_echo("⚠️  规则冲突提示:")
+            for field, info in conflicts.items():
+                status = info.get("status", "overridden")
+                global_val = info.get("global_value")
+                supplier_val = info.get("supplier_value")
+                safe_echo(f"   - {field}: 全局={global_val} → 供应商={supplier_val} [{status}]")
+
+        sys.exit(ExitCode.SUCCESS.value)
+
+    except SupplierRuleError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+
+
+@rule_cmd.command("delete")
+@click.argument("supplier")
+@click.option("--force", "-f", is_flag=True, help="跳过确认直接删除")
+@pass_ctx
+def rule_delete_cmd(ctx: CLIContext, supplier: str, force: bool) -> None:
+    """删除供应商专属校验规则"""
+    try:
+        ctx.config_mgr.load()
+
+        if not force:
+            safe_echo(f"⚠️  确定要删除供应商 '{supplier}' 的专属规则吗？")
+            safe_echo(f"   删除后该供应商的发票将使用全局默认规则校验")
+            safe_echo(f"   请确认: {supplier}")
+            confirm = click.prompt("输入供应商名称以确认删除", type=str, default="")
+            if confirm != supplier:
+                safe_echo("❌ 已取消删除")
+                sys.exit(ExitCode.INVALID_ARGUMENT.value)
+
+        ctx.config_mgr.delete_supplier_rule(supplier)
+        safe_echo(f"✅ 已删除供应商规则: {supplier}")
+        safe_echo(f"   该供应商现在使用全局默认规则进行校验")
+
+        sys.exit(ExitCode.SUCCESS.value)
+
+    except SupplierRuleError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+
+
+@rule_cmd.command("show")
+@click.argument("supplier")
+@pass_ctx
+def rule_show_cmd(ctx: CLIContext, supplier: str) -> None:
+    """显示指定供应商的规则详情及与全局的差异"""
+    try:
+        ctx.config_mgr.load()
+        rule, conflicts = ctx.config_mgr.get_supplier_rule(supplier)
+
+        safe_echo(f"📋 供应商规则: {supplier}")
+        safe_echo(f"   创建时间: {rule.created_at}")
+        safe_echo(f"   更新时间: {rule.updated_at}")
+        safe_echo("")
+        safe_echo("| 配置项 | 供应商规则 | 全局配置 | 状态 |")
+        safe_echo("|--------|-----------|----------|------|")
+
+        tax_rates_supp = sorted(rule.valid_tax_rates) if rule.valid_tax_rates else "使用全局"
+        tax_rates_global = sorted(ctx.config_mgr.config.valid_tax_rates)
+        tax_status = "✅ 覆盖" if rule.valid_tax_rates else "🔹 继承"
+        if conflicts.get("valid_tax_rates"):
+            tax_status = "⚠️ 冲突"
+        safe_echo(f"| 税率白名单 | {tax_rates_supp} | {tax_rates_global} | {tax_status} |")
+
+        tolerance_supp = rule.amount_tolerance if rule.amount_tolerance is not None else "使用全局"
+        tolerance_global = ctx.config_mgr.config.amount_tolerance
+        tol_status = "✅ 覆盖" if rule.amount_tolerance is not None else "🔹 继承"
+        if conflicts.get("amount_tolerance"):
+            tol_status = "⚠️ 冲突"
+        safe_echo(f"| 金额容差 | {tolerance_supp} | {tolerance_global} | {tol_status} |")
+
+        req_fields_supp = rule.required_fields if rule.required_fields else "使用全局"
+        req_fields_global = ctx.config_mgr.config.required_fields
+        req_status = "✅ 覆盖" if rule.required_fields else "🔹 继承"
+        if conflicts.get("required_fields"):
+            req_status = "⚠️ 冲突"
+        safe_echo(f"| 必填字段 | {req_fields_supp} | {req_fields_global} | {req_status} |")
+
+        if conflicts:
+            safe_echo("")
+            safe_echo("⚠️  冲突详情:")
+            for field, info in conflicts.items():
+                safe_echo(f"   - {field}: {info.get('message', '值不同')}")
+                global_val = info.get("global_value")
+                supplier_val = info.get("supplier_value")
+                safe_echo(f"     全局: {global_val}")
+                safe_echo(f"     供应商: {supplier_val}")
+
+        sys.exit(ExitCode.SUCCESS.value)
+
+    except SupplierRuleError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+
+
+@rule_cmd.command("list")
+@pass_ctx
+def rule_list_cmd(ctx: CLIContext) -> None:
+    """列出所有已配置的供应商规则"""
+    try:
+        ctx.config_mgr.load()
+        rules = ctx.config_mgr.list_supplier_rules()
+
+        if not rules:
+            safe_echo("⚠️  没有配置任何供应商规则")
+            safe_echo(f"💡 添加规则: invoice-validator rule add <供应商名称> [选项]")
+            sys.exit(ExitCode.SUCCESS.value)
+
+        safe_echo(f"📋 共找到 {len(rules)} 条供应商规则")
+        safe_echo(f"   配置文件: {ctx.config_mgr.supplier_rules_file}")
+        safe_echo("")
+        safe_echo("| 序号 | 供应商 | 税率白名单 | 容差 | 必填字段 | 最近更新 |")
+        safe_echo("|------|--------|-----------|------|----------|----------|")
+
+        for i, (rule, _) in enumerate(rules, 1):
+            tax = f"{len(rule.valid_tax_rates)}项" if rule.valid_tax_rates else "-"
+            tol = rule.amount_tolerance if rule.amount_tolerance is not None else "-"
+            req = f"{len(rule.required_fields)}项" if rule.required_fields else "-"
+            safe_echo(f"| {i:2d} | {rule.supplier} | {tax} | {tol} | {req} | {rule.updated_at[:19]} |")
+
+        sys.exit(ExitCode.SUCCESS.value)
+
+    except SupplierRuleError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+
+
+@rule_cmd.command("reload")
+@pass_ctx
+def rule_reload_cmd(ctx: CLIContext) -> None:
+    """重新从磁盘加载规则配置（验证重启后读取效果）"""
+    try:
+        ctx.config_mgr.load()
+        rules = ctx.config_mgr.list_supplier_rules()
+        safe_echo(f"✅ 已重新加载规则配置")
+        safe_echo(f"   配置文件: {ctx.config_mgr.supplier_rules_file}")
+        safe_echo(f"   已加载规则数: {len(rules)}")
+
+        if rules:
+            safe_echo("")
+            for rule, _ in rules[:5]:
+                safe_echo(f"   - {rule.supplier}: {len(rule.valid_tax_rates or [])}税率, {len(rule.required_fields or [])}必填字段")
+            if len(rules) > 5:
+                safe_echo(f"   ... 还有 {len(rules) - 5} 条规则")
+
+        sys.exit(ExitCode.SUCCESS.value)
+
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
 
 
 if __name__ == "__main__":

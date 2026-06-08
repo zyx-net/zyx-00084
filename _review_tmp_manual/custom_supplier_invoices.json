@@ -1,0 +1,22 @@
+﻿[
+  {
+    "invoice_no": "A-002",
+    "amount": 100,
+    "tax_rate": 0.06,
+    "tax_amount": 6,
+    "total_amount": 106,
+    "date": "2026-06-08",
+    "supplier": "SupplierA",
+    "buyer": "Buyer1"
+  },
+  {
+    "invoice_no": "N-001",
+    "amount": 100,
+    "tax_rate": 0.25,
+    "tax_amount": 25,
+    "total_amount": 125,
+    "date": "2026-06-08",
+    "supplier": "NoRuleVendor",
+    "buyer": "Buyer1"
+  }
+]

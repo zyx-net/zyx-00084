@@ -26,7 +26,7 @@
     "tax_amount": 30.0,
     "total_amount": 530.0,
     "date": "2024-01-17",
-    "supplier": "华为技术有限公司",
+    "supplier": "腾讯科技",
     "buyer": "采购方公司"
   },
   {
@@ -46,7 +46,7 @@
     "tax_amount": 375.0,
     "total_amount": 1875.0,
     "date": "2024-01-19",
-    "supplier": "腾讯科技有限公司",
+    "supplier": "字节跳动",
     "buyer": "采购方公司"
   },
   {
@@ -56,7 +56,7 @@
     "tax_amount": 48.0,
     "total_amount": 850.0,
     "date": "2024-01-20",
-    "supplier": "阿里巴巴集团",
+    "supplier": "小米科技",
     "buyer": "采购方公司"
   }
 ]
