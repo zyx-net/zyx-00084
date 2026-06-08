@@ -2,19 +2,83 @@ import os
 import sys
 import json
 import csv
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 
 import click
 
-from .config import ConfigManager
+from .config import ConfigManager, ConfigError
 from .storage import StorageManager
 from .importer import InvoiceImporter
 from .validator import InvoiceValidator
 from .exporter import ReportExporter
 from .models import ExitCode, Severity, Batch, FixAction
 from . import __version__
+
+
+_EMOJI_FALLBACK = {
+    "✅": "[OK]",
+    "❌": "[ERROR]",
+    "⚠️": "[WARN]",
+    "💡": "[TIP]",
+    "📦": "[BATCH]",
+    "📄": "[FILE]",
+    "📊": "[REPORT]",
+    "⏳": "[PENDING]",
+    "🔴": "[ERROR]",
+    "🟡": "[WARN]",
+    "🔵": "[INFO]",
+    "↩️": "[UNDO]",
+    "📝": "[NOTE]",
+}
+
+_EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F1E0-\U0001F1FF"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U00002600-\U000027BF"
+    "\U0001F100-\U0001F1FF"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _replace_emoji(text: str) -> str:
+    def replace(match: re.Match) -> str:
+        emoji = match.group(0)
+        return _EMOJI_FALLBACK.get(emoji, f"[{emoji.encode('unicode-escape').decode('ascii')}]")
+    return _EMOJI_PATTERN.sub(replace, text)
+
+
+def safe_echo(message: str, err: bool = False) -> None:
+    try:
+        click.echo(message, err=err)
+    except UnicodeEncodeError:
+        safe_msg = _replace_emoji(message)
+        try:
+            click.echo(safe_msg, err=err)
+        except UnicodeEncodeError:
+            click.echo(safe_msg.encode("ascii", errors="replace").decode("ascii"), err=err)
+
+
+def _setup_encoding() -> None:
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, IOError):
+            pass
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8:replace")
+
+
+_setup_encoding()
 
 
 class CLIContext:
@@ -33,7 +97,16 @@ pass_ctx = click.make_pass_decorator(CLIContext)
 @click.pass_context
 def cli(ctx: click.Context, workspace: str) -> None:
     """离线发票包校验 CLI - 用于检查供应商 CSV/JSON 发票包"""
-    ctx.obj = CLIContext(workspace)
+    try:
+        ctx.obj = CLIContext(workspace)
+        if ctx.invoked_subcommand != "init":
+            ctx.obj.config_mgr.load()
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
+    except RuntimeError as e:
+        safe_echo(f"❌ 初始化失败: {str(e)}", err=True)
+        sys.exit(ExitCode.STORAGE_ERROR.value)
 
 
 @cli.command("init")
@@ -45,10 +118,18 @@ def init_cmd(ctx: CLIContext, force: bool) -> None:
     samples_dir = ctx.workspace / "samples"
 
     if config_dir.exists() and not force:
-        click.echo(f"错误: 工作区已初始化。使用 --force 覆盖现有数据。", err=True)
+        safe_echo(f"错误: 工作区已初始化。使用 --force 覆盖现有数据。", err=True)
         sys.exit(ExitCode.STORAGE_ERROR.value)
 
-    config = ctx.config_mgr.load()
+    if force and config_dir.exists():
+        import shutil
+        shutil.rmtree(config_dir)
+
+    try:
+        config = ctx.config_mgr.load()
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
     ctx.config_mgr.save(config)
 
     samples_dir.mkdir(exist_ok=True)
@@ -99,9 +180,9 @@ def init_cmd(ctx: CLIContext, force: bool) -> None:
         encoding="utf-8"
     )
 
-    click.echo("✅ 工作区初始化完成")
-    click.echo(f"   配置文件: {ctx.workspace / '.invoice_validator' / 'config.json'}")
-    click.echo(f"   样例目录: {samples_dir}")
+    safe_echo("✅ 工作区初始化完成")
+    safe_echo(f"   配置文件: {ctx.workspace / '.invoice_validator' / 'config.json'}")
+    safe_echo(f"   样例目录: {samples_dir}")
     sys.exit(ExitCode.SUCCESS.value)
 
 
@@ -110,13 +191,17 @@ def init_cmd(ctx: CLIContext, force: bool) -> None:
 @pass_ctx
 def import_cmd(ctx: CLIContext, file_path: str) -> None:
     """导入一批发票数据（CSV 或 JSON）"""
-    config = ctx.config_mgr.load()
+    try:
+        config = ctx.config_mgr.load()
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
     importer = InvoiceImporter(config)
 
     try:
         result = importer.import_file(file_path)
     except Exception as e:
-        click.echo(f"❌ 导入失败: {str(e)}", err=True)
+        safe_echo(f"❌ 导入失败: {str(e)}", err=True)
         sys.exit(ExitCode.STORAGE_ERROR.value)
 
     file_type = Path(file_path).suffix.lower().lstrip(".")
@@ -125,17 +210,17 @@ def import_cmd(ctx: CLIContext, file_path: str) -> None:
     batch.issues.extend(result.issues)
     ctx.storage_mgr.save_batch(batch)
 
-    click.echo(f"📦 批次 ID: {batch.batch_id}")
-    click.echo(f"📄 源文件: {file_path}")
-    click.echo(f"✅ 成功导入: {len(result.invoices)} 张发票")
+    safe_echo(f"📦 批次 ID: {batch.batch_id}")
+    safe_echo(f"📄 源文件: {file_path}")
+    safe_echo(f"✅ 成功导入: {len(result.invoices)} 张发票")
 
     if result.issues:
         errors = [i for i in result.issues if i.severity == Severity.ERROR]
         warnings = [i for i in result.issues if i.severity == Severity.WARNING]
-        click.echo(f"⚠️  导入问题: {len(errors)} 错误, {len(warnings)} 警告")
+        safe_echo(f"⚠️  导入问题: {len(errors)} 错误, {len(warnings)} 警告")
         for issue in result.issues:
             icon = "🔴" if issue.severity == Severity.ERROR else "🟡"
-            click.echo(f"   {icon} {issue.message}")
+            safe_echo(f"   {icon} {issue.message}")
 
     sys.exit(result.exit_code.value)
 
@@ -148,14 +233,18 @@ def validate_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
     try:
         batch = ctx.storage_mgr.load_batch(batch_id)
     except RuntimeError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.BATCH_NOT_FOUND.value)
 
     if not batch.invoices:
-        click.echo("⚠️  批次中没有发票数据")
+        safe_echo("⚠️  批次中没有发票数据")
         sys.exit(ExitCode.SUCCESS.value)
 
-    config = ctx.config_mgr.load()
+    try:
+        config = ctx.config_mgr.load()
+    except ConfigError as e:
+        safe_echo(f"❌ {str(e)}", err=True)
+        sys.exit(e.exit_code.value)
     validator = InvoiceValidator(config)
     result = validator.validate(batch.invoices)
 
@@ -171,21 +260,21 @@ def validate_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
     batch.validated_at = datetime.now().isoformat()
     ctx.storage_mgr.save_batch(batch)
 
-    click.echo(f"📦 批次: {batch.batch_id}")
-    click.echo(f"✅ 校验完成: {len(batch.invoices)} 张发票")
+    safe_echo(f"📦 批次: {batch.batch_id}")
+    safe_echo(f"✅ 校验完成: {len(batch.invoices)} 张发票")
 
     if result.issues:
         errors = [i for i in result.issues if i.severity == Severity.ERROR]
         warnings = [i for i in result.issues if i.severity == Severity.WARNING]
-        click.echo(f"⚠️  发现问题: {len(errors)} 错误, {len(warnings)} 警告")
-        click.echo(f"💡 建议修正: {len(result.fixes)} 条")
-        click.echo("")
+        safe_echo(f"⚠️  发现问题: {len(errors)} 错误, {len(warnings)} 警告")
+        safe_echo(f"💡 建议修正: {len(result.fixes)} 条")
+        safe_echo("")
         for i, issue in enumerate(result.issues, 1):
             icon = "🔴" if issue.severity == Severity.ERROR else "🟡"
             loc = f"[发票:{issue.invoice_no}]" if issue.invoice_no else (f"[行:{issue.row_index}]" if issue.row_index else "")
-            click.echo(f"{i:2d}. {icon} {issue.type.value:25s} {loc} {issue.message}")
+            safe_echo(f"{i:2d}. {icon} {issue.type.value:25s} {loc} {issue.message}")
     else:
-        click.echo("✅ 全部校验通过！")
+        safe_echo("✅ 全部校验通过！")
 
     sys.exit(result.exit_code.value)
 
@@ -198,35 +287,35 @@ def fix_plan_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
     try:
         batch = ctx.storage_mgr.load_batch(batch_id)
     except RuntimeError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.BATCH_NOT_FOUND.value)
 
     pending_fixes = [f for f in batch.fixes if not f.applied]
     applied_fixes = [f for f in batch.fixes if f.applied]
 
-    click.echo(f"📦 批次: {batch.batch_id}")
-    click.echo(f"💡 修正草案汇总: 待应用 {len(pending_fixes)} 条, 已应用 {len(applied_fixes)} 条")
-    click.echo("")
+    safe_echo(f"📦 批次: {batch.batch_id}")
+    safe_echo(f"💡 修正草案汇总: 待应用 {len(pending_fixes)} 条, 已应用 {len(applied_fixes)} 条")
+    safe_echo("")
 
     if not batch.fixes:
-        click.echo("⚠️  没有可用的修正草案，请先运行 validate 命令")
+        safe_echo("⚠️  没有可用的修正草案，请先运行 validate 命令")
         sys.exit(ExitCode.NO_FIXES_TO_APPLY.value)
 
     if pending_fixes:
-        click.echo("⏳ 待应用的修正:")
-        click.echo("")
+        safe_echo("⏳ 待应用的修正:")
+        safe_echo("")
         for i, fix in enumerate(pending_fixes, 1):
-            click.echo(f"  {i:2d}. [{fix.id}] {fix.description}")
-            click.echo(f"       发票: {fix.invoice_no}, 字段: {fix.field}")
-            click.echo(f"       原值: {fix.old_value} → 新值: {fix.new_value}")
-            click.echo(f"       原因: {fix.reason}")
-            click.echo("")
+            safe_echo(f"  {i:2d}. [{fix.id}] {fix.description}")
+            safe_echo(f"       发票: {fix.invoice_no}, 字段: {fix.field}")
+            safe_echo(f"       原值: {fix.old_value} → 新值: {fix.new_value}")
+            safe_echo(f"       原因: {fix.reason}")
+            safe_echo("")
 
     if applied_fixes:
-        click.echo("✅ 已应用的修正:")
-        click.echo("")
+        safe_echo("✅ 已应用的修正:")
+        safe_echo("")
         for i, fix in enumerate(applied_fixes, 1):
-            click.echo(f"  {i:2d}. [{fix.id}] {fix.description} (应用于 {fix.applied_at})")
+            safe_echo(f"  {i:2d}. [{fix.id}] {fix.description} (应用于 {fix.applied_at})")
 
     sys.exit(ExitCode.SUCCESS.value)
 
@@ -240,21 +329,21 @@ def apply_cmd(ctx: CLIContext, fix_id: str, batch_id: Optional[str]) -> None:
     try:
         batch = ctx.storage_mgr.load_batch(batch_id)
     except RuntimeError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.BATCH_NOT_FOUND.value)
 
     fix = next((f for f in batch.fixes if f.id == fix_id), None)
     if not fix:
-        click.echo(f"❌ 未找到修正 ID: {fix_id}", err=True)
+        safe_echo(f"❌ 未找到修正 ID: {fix_id}", err=True)
         sys.exit(ExitCode.INVALID_ARGUMENT.value)
 
     if fix.applied:
-        click.echo(f"⚠️  修正 {fix_id} 已经应用过了")
+        safe_echo(f"⚠️  修正 {fix_id} 已经应用过了")
         sys.exit(ExitCode.SUCCESS.value)
 
     invoice = next((inv for inv in batch.invoices if inv.invoice_no == fix.invoice_no), None)
     if not invoice:
-        click.echo(f"❌ 未找到发票: {fix.invoice_no}", err=True)
+        safe_echo(f"❌ 未找到发票: {fix.invoice_no}", err=True)
         sys.exit(ExitCode.INVALID_ARGUMENT.value)
 
     old_value = getattr(invoice, fix.field)
@@ -274,12 +363,12 @@ def apply_cmd(ctx: CLIContext, fix_id: str, batch_id: Optional[str]) -> None:
 
     ctx.storage_mgr.save_batch(batch)
 
-    click.echo(f"✅ 已应用修正: {fix_id}")
-    click.echo(f"   发票: {fix.invoice_no}")
-    click.echo(f"   字段: {fix.field}")
-    click.echo(f"   原值: {old_value} → 新值: {fix.new_value}")
-    click.echo("")
-    click.echo("💡 可使用 undo 命令撤销此修正")
+    safe_echo(f"✅ 已应用修正: {fix_id}")
+    safe_echo(f"   发票: {fix.invoice_no}")
+    safe_echo(f"   字段: {fix.field}")
+    safe_echo(f"   原值: {old_value} → 新值: {fix.new_value}")
+    safe_echo("")
+    safe_echo("💡 可使用 undo 命令撤销此修正")
 
     sys.exit(ExitCode.SUCCESS.value)
 
@@ -292,11 +381,11 @@ def undo_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
     try:
         batch = ctx.storage_mgr.load_batch(batch_id)
     except RuntimeError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.BATCH_NOT_FOUND.value)
 
     if not batch.last_undo or batch.last_undo.get("undone_at") is not None:
-        click.echo("❌ 没有可撤销的已应用修正。请先应用至少一条修正。", err=True)
+        safe_echo("❌ 没有可撤销的已应用修正。请先应用至少一条修正。", err=True)
         sys.exit(ExitCode.NO_APPLIED_FIX_TO_UNDO.value)
 
     undo_info = batch.last_undo
@@ -307,7 +396,7 @@ def undo_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
 
     invoice = next((inv for inv in batch.invoices if inv.invoice_no == invoice_no), None)
     if not invoice:
-        click.echo(f"❌ 未找到发票: {invoice_no}", err=True)
+        safe_echo(f"❌ 未找到发票: {invoice_no}", err=True)
         sys.exit(ExitCode.INVALID_ARGUMENT.value)
 
     current_value = getattr(invoice, field)
@@ -323,10 +412,10 @@ def undo_cmd(ctx: CLIContext, batch_id: Optional[str]) -> None:
 
     ctx.storage_mgr.save_batch(batch)
 
-    click.echo(f"↩️  已撤销修正: {fix_id}")
-    click.echo(f"   发票: {invoice_no}")
-    click.echo(f"   字段: {field}")
-    click.echo(f"   当前值: {current_value} → 恢复为: {restore_value}")
+    safe_echo(f"↩️  已撤销修正: {fix_id}")
+    safe_echo(f"   发票: {invoice_no}")
+    safe_echo(f"   字段: {field}")
+    safe_echo(f"   当前值: {current_value} → 恢复为: {restore_value}")
 
     sys.exit(ExitCode.SUCCESS.value)
 
@@ -341,7 +430,7 @@ def export_cmd(ctx: CLIContext, output: str, fmt: str, batch_id: Optional[str]) 
     try:
         batch = ctx.storage_mgr.load_batch(batch_id)
     except RuntimeError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.BATCH_NOT_FOUND.value)
 
     ext = ".md" if fmt == "markdown" else ".json"
@@ -351,21 +440,21 @@ def export_cmd(ctx: CLIContext, output: str, fmt: str, batch_id: Optional[str]) 
     try:
         result = exporter.export(batch, output_path, fmt)
     except ValueError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.INVALID_ARGUMENT.value)
     except Exception as e:
-        click.echo(f"❌ 导出失败: {str(e)}", err=True)
+        safe_echo(f"❌ 导出失败: {str(e)}", err=True)
         sys.exit(ExitCode.STORAGE_ERROR.value)
 
     summary = exporter._build_summary(batch)
-    click.echo(f"📦 批次: {batch.batch_id}")
-    click.echo(f"📊 报告汇总:")
-    click.echo(f"   发票数: {summary['invoice_count']}")
-    click.echo(f"   问题数: {summary['issue_count']} (错误:{summary['error_count']}, 警告:{summary['warning_count']})")
-    click.echo(f"   修正数: {summary['fix_count']} (已应用:{summary['applied_fix_count']})")
-    click.echo(f"   价税合计: ¥{summary['grand_total']:,.2f}")
-    click.echo("")
-    click.echo(f"✅ 报告已导出: {result.output_path}")
+    safe_echo(f"📦 批次: {batch.batch_id}")
+    safe_echo(f"📊 报告汇总:")
+    safe_echo(f"   发票数: {summary['invoice_count']}")
+    safe_echo(f"   问题数: {summary['issue_count']} (错误:{summary['error_count']}, 警告:{summary['warning_count']})")
+    safe_echo(f"   修正数: {summary['fix_count']} (已应用:{summary['applied_fix_count']})")
+    safe_echo(f"   价税合计: ¥{summary['grand_total']:,.2f}")
+    safe_echo("")
+    safe_echo(f"✅ 报告已导出: {result.output_path}")
 
     sys.exit(ExitCode.SUCCESS.value)
 
@@ -377,21 +466,21 @@ def list_cmd(ctx: CLIContext) -> None:
     batches = ctx.storage_mgr.list_batches()
 
     if not batches:
-        click.echo("⚠️  没有找到历史批次，请先使用 import 命令导入发票")
+        safe_echo("⚠️  没有找到历史批次，请先使用 import 命令导入发票")
         sys.exit(ExitCode.SUCCESS.value)
 
     current_id = ctx.storage_mgr.get_current_batch_id()
 
-    click.echo(f"共找到 {len(batches)} 个批次:")
-    click.echo("")
+    safe_echo(f"共找到 {len(batches)} 个批次:")
+    safe_echo("")
     for i, b in enumerate(batches, 1):
         marker = " ← 当前" if b["batch_id"] == current_id else ""
         status = "✓" if b["validated"] else "○"
-        click.echo(f"{i:2d}. {status} {b['batch_id']}{marker}")
-        click.echo(f"     创建: {b['created_at']}")
-        click.echo(f"     文件: {b['source_file']}")
-        click.echo(f"     发票: {b['invoice_count']} 张, 问题: {b['issue_count']} 个")
-        click.echo("")
+        safe_echo(f"{i:2d}. {status} {b['batch_id']}{marker}")
+        safe_echo(f"     创建: {b['created_at']}")
+        safe_echo(f"     文件: {b['source_file']}")
+        safe_echo(f"     发票: {b['invoice_count']} 张, 问题: {b['issue_count']} 个")
+        safe_echo("")
 
     sys.exit(ExitCode.SUCCESS.value)
 
@@ -406,49 +495,49 @@ def show_cmd(ctx: CLIContext, batch_id: Optional[str], issues: bool, fixes: bool
     try:
         batch = ctx.storage_mgr.load_batch(batch_id)
     except RuntimeError as e:
-        click.echo(f"❌ {str(e)}", err=True)
+        safe_echo(f"❌ {str(e)}", err=True)
         sys.exit(ExitCode.BATCH_NOT_FOUND.value)
 
-    click.echo(f"📦 批次: {batch.batch_id}")
-    click.echo(f"   创建时间: {batch.created_at}")
-    click.echo(f"   源文件: {batch.source_file}")
-    click.echo(f"   校验状态: {'✓ 已校验' if batch.validated else '○ 未校验'}")
-    click.echo(f"   发票数: {len(batch.invoices)}")
-    click.echo(f"   问题数: {len(batch.issues)}")
-    click.echo(f"   修正数: {len(batch.fixes)}")
-    click.echo("")
+    safe_echo(f"📦 批次: {batch.batch_id}")
+    safe_echo(f"   创建时间: {batch.created_at}")
+    safe_echo(f"   源文件: {batch.source_file}")
+    safe_echo(f"   校验状态: {'✓ 已校验' if batch.validated else '○ 未校验'}")
+    safe_echo(f"   发票数: {len(batch.invoices)}")
+    safe_echo(f"   问题数: {len(batch.issues)}")
+    safe_echo(f"   修正数: {len(batch.fixes)}")
+    safe_echo("")
 
     if not fixes:
         if batch.invoices and not issues:
-            click.echo("📄 发票列表:")
-            click.echo("")
+            safe_echo("📄 发票列表:")
+            safe_echo("")
             for i, inv in enumerate(batch.invoices, 1):
-                click.echo(f"  {i:2d}. 发票号: {inv.invoice_no} | 金额: ¥{inv.amount:,.2f} | 税率: {inv.tax_rate*100:.0f}% | 合计: ¥{inv.total_amount:,.2f} | 日期: {inv.date}")
-            click.echo("")
+                safe_echo(f"  {i:2d}. 发票号: {inv.invoice_no} | 金额: ¥{inv.amount:,.2f} | 税率: {inv.tax_rate*100:.0f}% | 合计: ¥{inv.total_amount:,.2f} | 日期: {inv.date}")
+            safe_echo("")
 
         if batch.issues:
-            click.echo("⚠️  问题列表:")
-            click.echo("")
+            safe_echo("⚠️  问题列表:")
+            safe_echo("")
             for i, issue in enumerate(batch.issues, 1):
                 icon = "🔴" if issue.severity == Severity.ERROR else "🟡" if issue.severity == Severity.WARNING else "🔵"
-                click.echo(f"  {i:2d}. {icon} {issue.type.value} | 发票: {issue.invoice_no or 'N/A'} | {issue.message}")
-            click.echo("")
+                safe_echo(f"  {i:2d}. {icon} {issue.type.value} | 发票: {issue.invoice_no or 'N/A'} | {issue.message}")
+            safe_echo("")
 
     if not issues and batch.fixes:
-        click.echo("🔧 修正列表:")
-        click.echo("")
+        safe_echo("🔧 修正列表:")
+        safe_echo("")
         for i, fix in enumerate(batch.fixes, 1):
             status = "✅" if fix.applied else "⏳"
-            click.echo(f"  {i:2d}. {status} [{fix.id}] {fix.description}")
-            click.echo(f"       发票: {fix.invoice_no} | 字段: {fix.field} | {fix.old_value} → {fix.new_value}")
-        click.echo("")
+            safe_echo(f"  {i:2d}. {status} [{fix.id}] {fix.description}")
+            safe_echo(f"       发票: {fix.invoice_no} | 字段: {fix.field} | {fix.old_value} → {fix.new_value}")
+        safe_echo("")
 
     if batch.last_undo:
         undo = batch.last_undo
         if undo.get("undone_at"):
-            click.echo(f"↩️  最近撤销: 修正 {undo.get('fix_id')} 于 {undo.get('undone_at')}")
+            safe_echo(f"↩️  最近撤销: 修正 {undo.get('fix_id')} 于 {undo.get('undone_at')}")
         else:
-            click.echo(f"↩️  可撤销: 修正 {undo.get('fix_id')} (发票: {undo.get('invoice_no')})")
+            safe_echo(f"↩️  可撤销: 修正 {undo.get('fix_id')} (发票: {undo.get('invoice_no')})")
 
     sys.exit(ExitCode.SUCCESS.value)
 

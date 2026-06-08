@@ -161,3 +161,4 @@ class ExitCode(int, Enum):
     FILE_NOT_FOUND = 8
     STORAGE_ERROR = 9
     NO_FIXES_TO_APPLY = 10
+    INVALID_CONFIG = 11
