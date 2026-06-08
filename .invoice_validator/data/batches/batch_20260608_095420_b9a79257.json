@@ -1,0 +1,33 @@
+{
+  "batch_id": "batch_20260608_095420_b9a79257",
+  "created_at": "2026-06-08T09:54:20.027489",
+  "source_file": "samples/invoices_missing_cols.csv",
+  "file_type": "csv",
+  "invoices": [],
+  "issues": [
+    {
+      "type": "missing_required_field",
+      "severity": "error",
+      "message": "Missing required columns: tax_rate, total_amount, buyer. Available columns: invoice_no, amount, date, supplier",
+      "invoice_no": null,
+      "row_index": null,
+      "details": {
+        "missing": [
+          "tax_rate",
+          "total_amount",
+          "buyer"
+        ],
+        "available": [
+          "invoice_no",
+          "amount",
+          "date",
+          "supplier"
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "last_undo": null,
+  "validated": false,
+  "validated_at": null
+}

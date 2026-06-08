@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "invoice-validator"
+version = "1.0.0"
+description = "Multi-command offline invoice package validation CLI"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.1.0",
+]
+
+[project.scripts]
+invoice-validator = "invoice_validator.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["invoice_validator*"]

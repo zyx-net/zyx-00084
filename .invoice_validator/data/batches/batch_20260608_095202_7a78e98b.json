@@ -1,0 +1,186 @@
+{
+  "batch_id": "batch_20260608_095202_7a78e98b",
+  "created_at": "2026-06-08T09:52:02.844453",
+  "source_file": "samples/invoices_sample.csv",
+  "file_type": "csv",
+  "invoices": [
+    {
+      "invoice_no": "INV001",
+      "amount": 1000.0,
+      "tax_rate": 0.13,
+      "tax_amount": 130.0,
+      "total_amount": 1130.0,
+      "date": "2024-01-15",
+      "supplier": "供应商A有限公司",
+      "buyer": "采购方公司",
+      "row_index": 2
+    },
+    {
+      "invoice_no": "INV002",
+      "amount": 2000.0,
+      "tax_rate": 0.09,
+      "tax_amount": 180.0,
+      "total_amount": 2180.0,
+      "date": "2024-01-16",
+      "supplier": "供应商B有限公司",
+      "buyer": "采购方公司",
+      "row_index": 3
+    },
+    {
+      "invoice_no": "INV002",
+      "amount": 500.0,
+      "tax_rate": 0.06,
+      "tax_amount": 30.0,
+      "total_amount": 530.0,
+      "date": "2024-01-17",
+      "supplier": "供应商C有限公司",
+      "buyer": "采购方公司",
+      "row_index": 4
+    },
+    {
+      "invoice_no": "INV003",
+      "amount": 3000.0,
+      "tax_rate": 0.13,
+      "tax_amount": 390.0,
+      "total_amount": 3400.0,
+      "date": "2024-01-18",
+      "supplier": "供应商A有限公司",
+      "buyer": "采购方公司",
+      "row_index": 5
+    },
+    {
+      "invoice_no": "INV004",
+      "amount": 1500.0,
+      "tax_rate": 0.25,
+      "tax_amount": 375.0,
+      "total_amount": 1875.0,
+      "date": "2024-01-19",
+      "supplier": "供应商D有限公司",
+      "buyer": "采购方公司",
+      "row_index": 6
+    },
+    {
+      "invoice_no": "INV005",
+      "amount": 800.0,
+      "tax_rate": 0.06,
+      "tax_amount": 48.0,
+      "total_amount": 850.0,
+      "date": "2024-01-20",
+      "supplier": "供应商E有限公司",
+      "buyer": "采购方公司",
+      "row_index": 7
+    }
+  ],
+  "issues": [
+    {
+      "type": "duplicate_invoice_no",
+      "severity": "error",
+      "message": "Duplicate invoice number 'INV002' found in rows [3, 4]",
+      "invoice_no": "INV002",
+      "row_index": 3,
+      "details": {
+        "duplicate_rows": [
+          3,
+          4
+        ],
+        "count": 2
+      }
+    },
+    {
+      "type": "duplicate_invoice_no",
+      "severity": "error",
+      "message": "Duplicate invoice number 'INV002' found in rows [3, 4]",
+      "invoice_no": "INV002",
+      "row_index": 4,
+      "details": {
+        "duplicate_rows": [
+          3,
+          4
+        ],
+        "count": 2
+      }
+    },
+    {
+      "type": "invalid_tax_rate",
+      "severity": "error",
+      "message": "Invalid tax rate 0.25 for invoice 'INV004'. Valid rates: [0.0, 0.06, 0.09, 0.13]",
+      "invoice_no": "INV004",
+      "row_index": 6,
+      "details": {
+        "invalid_rate": 0.25,
+        "valid_rates": [
+          0.0,
+          0.06,
+          0.09,
+          0.13
+        ]
+      }
+    },
+    {
+      "type": "amount_mismatch",
+      "severity": "warning",
+      "message": "Amount mismatch for invoice 'INV003': amount + tax_amount = 3000.0 + 390.0 = 3390.0, but total_amount = 3400.0 (diff: 10.0000)",
+      "invoice_no": "INV003",
+      "row_index": 5,
+      "details": {
+        "amount": 3000.0,
+        "tax_amount": 390.0,
+        "computed_total": 3390.0,
+        "stated_total": 3400.0,
+        "difference": 10.0,
+        "tolerance": 0.01
+      }
+    },
+    {
+      "type": "amount_mismatch",
+      "severity": "warning",
+      "message": "Amount mismatch for invoice 'INV005': amount + tax_amount = 800.0 + 48.0 = 848.0, but total_amount = 850.0 (diff: 2.0000)",
+      "invoice_no": "INV005",
+      "row_index": 7,
+      "details": {
+        "amount": 800.0,
+        "tax_amount": 48.0,
+        "computed_total": 848.0,
+        "stated_total": 850.0,
+        "difference": 2.0,
+        "tolerance": 0.01
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "id": "fix_fe0ca4c2",
+      "description": "修正发票 INV003 的合计金额",
+      "invoice_no": "INV003",
+      "field": "total_amount",
+      "old_value": 3400.0,
+      "new_value": 3390.0,
+      "reason": "金额 + 税额 = 3000.0 + 390.0 = 3390.0，与票面合计 3400.0 不符",
+      "row_index": 5,
+      "applied": false,
+      "applied_at": null
+    },
+    {
+      "id": "fix_9a66e39c",
+      "description": "修正发票 INV005 的合计金额",
+      "invoice_no": "INV005",
+      "field": "total_amount",
+      "old_value": 850.0,
+      "new_value": 848.0,
+      "reason": "金额 + 税额 = 800.0 + 48.0 = 848.0，与票面合计 850.0 不符",
+      "row_index": 7,
+      "applied": false,
+      "applied_at": null
+    }
+  ],
+  "last_undo": {
+    "fix_id": "fix_fe0ca4c2",
+    "invoice_no": "INV003",
+    "field": "total_amount",
+    "restored_value": 3400.0,
+    "previous_value": 3390.0,
+    "undone_at": "2026-06-08T09:53:41.944651"
+  },
+  "validated": true,
+  "validated_at": "2026-06-08T09:52:15.939387"
+}

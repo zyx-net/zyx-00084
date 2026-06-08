@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: invoice-validator
+Version: 1.0.0
+Summary: Multi-command offline invoice package validation CLI
+Requires-Python: >=3.9
+Requires-Dist: click>=8.1.0

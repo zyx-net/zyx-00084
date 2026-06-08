@@ -1,0 +1,24 @@
+{
+  "batch_id": "batch_20260608_095421_7a343229",
+  "created_at": "2026-06-08T09:54:21.202388",
+  "source_file": "samples/invoices_corrupted.json",
+  "file_type": "json",
+  "invoices": [],
+  "issues": [
+    {
+      "type": "invalid_json",
+      "severity": "error",
+      "message": "Corrupted JSON: Expecting property name enclosed in double quotes: line 1 column 43 (char 42)",
+      "invoice_no": null,
+      "row_index": null,
+      "details": {
+        "error": "Expecting property name enclosed in double quotes: line 1 column 43 (char 42)",
+        "position": 42
+      }
+    }
+  ],
+  "fixes": [],
+  "last_undo": null,
+  "validated": false,
+  "validated_at": null
+}
