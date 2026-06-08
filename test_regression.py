@@ -4,18 +4,101 @@
 覆盖以下测试场景：
 1. init 命令正常运行（含编码兼容性）
 2. 正常导入、校验、修正、撤销、导出完整流程
-3. Markdown 报告中文可读性检查
+3. Markdown 报告中文标题、字段名、汇总正文可读性检查
 4. valid_tax_rates 非法值（负数、字符串）配置错误处理
 5. JSON 导出、apply/undo、历史读取不退化
+6. 缺少必填列、损坏JSON错误场景
+
+注意：本脚本内置编码保护，可在 GBK/ASCII 终端下稳定运行。
 """
 
 import json
 import os
+import re
 import sys
 import subprocess
 import shutil
 from pathlib import Path
 from typing import List, Tuple, Dict
+
+
+def _setup_encoding() -> None:
+    """设置控制台输出编码，确保 GBK/ASCII 终端下不崩溃。
+
+    不依赖用户终端编码设置，主动配置为 UTF-8 并启用替换模式。
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, IOError):
+        pass
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8:replace")
+
+
+_setup_encoding()
+
+
+_EMOJI_FALLBACK = {
+    "\u2705": "[OK]",
+    "\u274c": "[FAIL]",
+    "\ud83d\ude80": "[START]",
+    "\ud83d\udcc1": "[FOLDER]",
+    "\ud83d\udca1": "[TIP]",
+    "\ud83d\udd27": "[FIX]",
+    "\ud83d\udcc4": "[FILE]",
+    "\u2699\ufe0f": "[CONFIG]",
+    "\ud83d\udcdd": "[NOTE]",
+    "\ud83d\udcca": "[STATS]",
+    "\ud83d\udcdc": "[SCROLL]",
+    "\ud83e\uddf9": "[BROOM]",
+    "\ud83c\udf89": "[DONE]",
+    "\u26a0\ufe0f": "[WARN]",
+    "\ud83d\udce6": "[PACKAGE]",
+}
+
+_EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "\U0001F1E0-\U0001F1FF"
+    "\U00002600-\U000026FF"
+    "\ufe0f"
+    "]",
+    flags=re.UNICODE,
+)
+
+
+def _replace_emoji(text: str) -> str:
+    """将 emoji 替换为纯文本标签，确保 GBK 终端可显示。"""
+    def _replace(match: re.Match) -> str:
+        emoji = match.group(0)
+        return _EMOJI_FALLBACK.get(emoji, f"[{emoji.encode('unicode-escape').decode('ascii')}]")
+    return _EMOJI_PATTERN.sub(_replace, text)
+
+
+def safe_print(message: str = "", end: str = "\n") -> None:
+    """安全输出函数，三级降级确保 GBK 终端下不崩溃。
+
+    1. 尝试正常 UTF-8 输出（带 errors=replace）
+    2. 捕获 UnicodeEncodeError，替换 emoji 为文本标签
+    3. 再次失败时使用 ASCII 替换编码
+    """
+    try:
+        print(message, end=end)
+    except UnicodeEncodeError:
+        safe_msg = _replace_emoji(message)
+        try:
+            print(safe_msg, end=end)
+        except UnicodeEncodeError:
+            print(safe_msg.encode("ascii", errors="replace").decode("ascii"), end=end)
 
 
 WORKSPACE = Path(__file__).parent.resolve()
@@ -24,8 +107,11 @@ SAMPLES_DIR = WORKSPACE / "samples"
 CLI = [sys.executable, "-m", "invoice_validator.cli"]
 
 
-def run(cmd: List[str], check: bool = False, env: Dict = None) -> Tuple[int, str, str]:
-    """运行命令并返回 (退出码, stdout, stderr)"""
+def run(cmd: List[str], env: Dict = None) -> Tuple[int, str, str]:
+    """运行命令并返回 (退出码, stdout, stderr)。
+
+    内部强制使用 UTF-8 编码，不依赖外部环境。
+    """
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
@@ -45,21 +131,21 @@ def run(cmd: List[str], check: bool = False, env: Dict = None) -> Tuple[int, str
 
 def assert_exit(code: int, expected: int, desc: str) -> None:
     if code != expected:
-        print(f"❌ 失败: {desc}")
-        print(f"   期望退出码: {expected}, 实际: {code}")
+        safe_print(f"[FAIL] 失败: {desc}")
+        safe_print(f"   期望退出码: {expected}, 实际: {code}")
         sys.exit(1)
-    print(f"✅ 通过: {desc} (退出码={code})")
+    safe_print(f"[OK] 通过: {desc} (退出码={code})")
 
 
 def assert_contains(text: str, keyword: str, desc: str) -> None:
     if keyword not in text:
-        print(f"❌ 失败: {desc}")
-        print(f"   期望包含: '{keyword}'")
+        safe_print(f"[FAIL] 失败: {desc}")
+        safe_print(f"   期望包含: '{keyword}'")
         if len(text) > 500:
             text = text[:500] + "..."
-        print(f"   实际输出: {text}")
+        safe_print(f"   实际输出: {_replace_emoji(text)}")
         sys.exit(1)
-    print(f"✅ 通过: {desc}")
+    safe_print(f"[OK] 通过: {desc}")
 
 
 def setup_test_workspace() -> None:
@@ -72,30 +158,30 @@ def setup_test_workspace() -> None:
         if sample_file.is_file():
             shutil.copy2(sample_file, TEST_DIR / sample_file.name)
 
-    print(f"\n📁 测试工作区: {TEST_DIR}")
+    safe_print(f"\n[FOLDER] 测试工作区: {TEST_DIR}")
 
 
 def test_1_init_encoding() -> None:
     """测试1: init 命令在 GBK/ASCII 编码环境下不崩溃"""
-    print("\n" + "=" * 60)
-    print("测试1: init 命令编码兼容性")
-    print("=" * 60)
+    safe_print("\n" + "=" * 60)
+    safe_print("测试1: init 命令编码兼容性")
+    safe_print("=" * 60)
 
     code, out, err = run([*CLI, "init", "--force"], env={"PYTHONIOENCODING": "ascii:replace"})
     assert_exit(code, 0, "init 命令在 ASCII 编码下成功")
     assert_contains(out, "工作区初始化完成", "初始化成功消息")
 
-    print("   💡 输出预览（ASCII 编码下 emoji 被替换）:")
+    safe_print("   [TIP] 输出预览（ASCII 编码下 emoji 被替换）:")
     for line in out.strip().split("\n")[:3]:
         if line.strip():
-            print(f"      {line}")
+            safe_print(f"      {_replace_emoji(line)}")
 
 
 def test_2_full_workflow() -> None:
     """测试2: 完整工作流（导入→校验→修正→撤销→导出）"""
-    print("\n" + "=" * 60)
-    print("测试2: 完整工作流")
-    print("=" * 60)
+    safe_print("\n" + "=" * 60)
+    safe_print("测试2: 完整工作流")
+    safe_print("=" * 60)
 
     code, out, err = run([*CLI, "import", "invoices_sample.csv"])
     assert_exit(code, 0, "导入 CSV 成功")
@@ -112,13 +198,12 @@ def test_2_full_workflow() -> None:
     fix_id = None
     for line in out.split("\n"):
         if "[fix_" in line:
-            import re
             match = re.search(r"\[fix_([a-f0-9]+)\]", line)
             if match:
                 fix_id = f"fix_{match.group(1)}"
                 break
-    assert fix_id, f"未找到修正 ID，输出: {out}"
-    print(f"   🔧 待应用修正 ID: {fix_id}")
+    assert fix_id, f"未找到修正 ID，输出: {_replace_emoji(out)}"
+    safe_print(f"   [FIX] 待应用修正 ID: {fix_id}")
 
     code, out, err = run([*CLI, "apply", fix_id])
     assert_exit(code, 0, "应用修正成功")
@@ -135,9 +220,9 @@ def test_2_full_workflow() -> None:
 
 def test_3_markdown_chinese_readability() -> None:
     """测试3: Markdown 报告中文标题、字段名、汇总正文可读性"""
-    print("\n" + "=" * 60)
-    print("测试3: Markdown 报告中文可读性")
-    print("=" * 60)
+    safe_print("\n" + "=" * 60)
+    safe_print("测试3: Markdown 报告中文可读性")
+    safe_print("=" * 60)
 
     code, out, err = run([*CLI, "import", "invoices_sample.csv"])
     assert_exit(code, 0, "导入 CSV 成功")
@@ -171,17 +256,17 @@ def test_3_markdown_chinese_readability() -> None:
     for kw in expected_keywords:
         assert_contains(content, kw, f"报告包含 '{kw}'")
 
-    print("   📄 报告内容预览（前20行）:")
+    safe_print("   [FILE] 报告内容预览（前20行）:")
     for i, line in enumerate(content.split("\n")[:20], 1):
         if line.strip():
-            print(f"      {i:2d}. {line}")
+            safe_print(f"      {i:2d}. {line}")
 
 
 def test_4_invalid_tax_rates_config() -> None:
-    """测试4: valid_tax_rates 非法值配置错误处理"""
-    print("\n" + "=" * 60)
-    print("测试4: valid_tax_rates 非法值配置错误处理")
-    print("=" * 60)
+    """测试4: valid_tax_rates 非法值（负数、字符串）配置错误处理"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试4: valid_tax_rates 非法值配置错误处理")
+    safe_print("=" * 60)
 
     bad_config = {
         "field_mapping": {
@@ -199,7 +284,7 @@ def test_4_invalid_tax_rates_config() -> None:
     config_file = config_dir / "config.json"
     with open(config_file, "w", encoding="utf-8") as f:
         json.dump(bad_config, f, indent=2, ensure_ascii=False)
-    print(f"   ⚙️  写入非法配置: valid_tax_rates = {bad_config['valid_tax_rates']}")
+    safe_print(f"   [CONFIG] 写入非法配置: valid_tax_rates = {bad_config['valid_tax_rates']}")
 
     code, out, err = run([*CLI, "validate"])
     assert_exit(code, 11, "非法税率配置退出码=11")
@@ -213,7 +298,7 @@ def test_4_invalid_tax_rates_config() -> None:
     for kw in expected_err_keywords:
         assert_contains(err, kw, f"错误消息包含 '{kw}'")
 
-    print(f"   📝 错误消息: {err.strip()}")
+    safe_print(f"   [NOTE] 错误消息: {_replace_emoji(err.strip())}")
 
     good_config = bad_config.copy()
     good_config["valid_tax_rates"] = [0.0, 0.06, 0.09, 0.13]
@@ -222,14 +307,14 @@ def test_4_invalid_tax_rates_config() -> None:
 
     code, out, err = run([*CLI, "validate"])
     assert_exit(code, 3, "修正配置后校验正常（非法税率退出码=3）")
-    print("   ✅ 修正配置后恢复正常")
+    safe_print("   [OK] 修正配置后恢复正常")
 
 
 def test_5_json_export_and_history() -> None:
-    """测试5: JSON 导出、历史读取不退化"""
-    print("\n" + "=" * 60)
-    print("测试5: JSON 导出、历史读取不退化")
-    print("=" * 60)
+    """测试5: JSON 导出、apply/undo、历史读取不退化"""
+    safe_print("\n" + "=" * 60)
+    safe_print("测试5: JSON 导出、历史读取不退化")
+    safe_print("=" * 60)
 
     code, out, err = run([*CLI, "import", "invoices_sample.json"])
     assert_exit(code, 0, "导入 JSON 成功")
@@ -238,7 +323,7 @@ def test_5_json_export_and_history() -> None:
         if "批次 ID:" in line:
             batch_id_1 = line.split("批次 ID:")[1].strip()
             break
-    assert batch_id_1, f"未找到批次 ID，输出: {out}"
+    assert batch_id_1, f"未找到批次 ID，输出: {_replace_emoji(out)}"
 
     code, out, err = run([*CLI, "validate"])
     assert_exit(code, 3, "校验完成")
@@ -254,7 +339,7 @@ def test_5_json_export_and_history() -> None:
     assert "summary" in data, "JSON 报告包含 summary"
     assert data["summary"]["invoice_count"] == 6, "发票数量正确"
     assert data["summary"]["error_count"] >= 1, "错误数量正确"
-    print(f"   📊 JSON 报告摘要: {data['summary']}")
+    safe_print(f"   [STATS] JSON 报告摘要: {data['summary']}")
 
     code, out, err = run([*CLI, "import", "invoices_sample.csv"])
     assert_exit(code, 0, "再次导入创建新批次")
@@ -268,32 +353,33 @@ def test_5_json_export_and_history() -> None:
     assert_contains(out, batch_id_1, "历史批次 ID 正确")
     assert_contains(out, "发票数: 6", "历史批次发票数量正确")
 
-    print(f"   📜 历史批次可正常读取: {batch_id_1}")
+    safe_print(f"   [SCROLL] 历史批次可正常读取: {batch_id_1}")
 
 
 def test_6_error_scenarios() -> None:
     """测试6: 其他错误场景（缺少必填列、损坏JSON）"""
-    print("\n" + "=" * 60)
-    print("测试6: 缺少必填列、损坏JSON错误场景")
-    print("=" * 60)
+    safe_print("\n" + "=" * 60)
+    safe_print("测试6: 缺少必填列、损坏JSON错误场景")
+    safe_print("=" * 60)
 
     code, out, err = run([*CLI, "import", "invoices_missing_cols.csv"])
     assert_exit(code, 1, "缺少必填列退出码=1")
     combined = out + err
     assert_contains(combined, "Missing required columns", "缺少必填列错误消息可读")
-    print(f"   📝 缺少必填列错误: {(out + err).strip()[:100]}...")
+    safe_print(f"   [NOTE] 缺少必填列错误: {_replace_emoji((out + err).strip()[:100])}...")
 
     code, out, err = run([*CLI, "import", "invoices_corrupted.json"])
     assert_exit(code, 2, "损坏JSON退出码=2")
     combined = out + err
     assert_contains(combined, "Corrupted JSON", "损坏JSON错误消息可读")
-    print(f"   📝 损坏JSON错误: {(out + err).strip()[:100]}...")
+    safe_print(f"   [NOTE] 损坏JSON错误: {_replace_emoji((out + err).strip()[:100])}...")
 
 
 def main() -> None:
-    print("🚀 发票校验 CLI 回归测试开始")
-    print(f"   Python 版本: {sys.version}")
-    print(f"   工作目录: {WORKSPACE}")
+    safe_print("[START] 发票校验 CLI 回归测试开始")
+    safe_print(f"   Python 版本: {sys.version}")
+    safe_print(f"   工作目录: {WORKSPACE}")
+    safe_print(f"   输出编码: {sys.stdout.encoding}")
 
     setup_test_workspace()
 
@@ -307,11 +393,11 @@ def main() -> None:
     finally:
         if TEST_DIR.exists():
             shutil.rmtree(TEST_DIR)
-            print(f"\n🧹 清理测试工作区: {TEST_DIR}")
+            safe_print(f"\n[BROOM] 清理测试工作区: {TEST_DIR}")
 
-    print("\n" + "=" * 60)
-    print("🎉 所有测试通过！")
-    print("=" * 60)
+    safe_print("\n" + "=" * 60)
+    safe_print("[DONE] 所有测试通过！")
+    safe_print("=" * 60)
 
 
 if __name__ == "__main__":
